@@ -209,15 +209,21 @@ function calc(){
     c.mats.forEach(([m,q])=>{ need[m]=need[m]||{qty:0,craft:false}; need[m].qty+=q; });
   });
   // 2. 展开合成(仅"只能合成获得"的素材),递归
+  //    已拥有的合成产物按配方折算:其合成材料视为已有,只展开缺口部分
   const craftLines=[];
   function expand(m,qty,mult){
     const rec=DATA.recipes[m]; if(!rec) return;
-    craftLines.push({m,qty,ings:rec});
-    rec.forEach(([ing,n])=>{
-      const q=n*qty;
-      if(isCraftOnly(ing)){ expand(ing,q); }
-      else { need[ing]=need[ing]||{qty:0,craft:false}; need[ing].qty+=q; need[ing].craft=true; }
-    });
+    const have=Math.min(INV[m]||0,qty);
+    const rem=qty-have;
+    if(have>0) craftLines.push({m,qty:have,ings:[],skip:true});
+    if(rem>0){
+      craftLines.push({m,qty:rem,ings:rec});
+      rec.forEach(([ing,n])=>{
+        const q=n*rem;
+        if(isCraftOnly(ing)){ expand(ing,q); }
+        else { need[ing]=need[ing]||{qty:0,craft:false}; need[ing].qty+=q; need[ing].craft=true; }
+      });
+    }
     delete need[m];
   }
   Object.keys({...need}).forEach(m=>{
@@ -236,7 +242,9 @@ function calc(){
   });
   const ct=document.getElementById('craftTree');
   ct.innerHTML = craftLines.length
-    ? '<b>⚙ 合成展开:</b><br>'+craftLines.map(l=>`${l.m} ×${l.qty} ← ${l.ings.map(i=>i[0]+'×'+i[1]).join(' + ')}`).join('<br>')
+    ? '<b>⚙ 合成展开:</b><br>'+craftLines.map(l=>l.skip
+        ? `${l.m} ✓ 已有 ${l.qty} 个,其 ${l.qty} 份合成材料视为已拥有,不再计入需求`
+        : `${l.m} ×${l.qty} ← ${l.ings.map(i=>i[0]+'×'+i[1]).join(' + ')}`).join('<br>')
     : '本套素材无需合成即可直接获取。';
 
   // 4. 副本统计(仅统计仍缺少的素材)

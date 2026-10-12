@@ -40,6 +40,16 @@ button{border:none;border-radius:10px;padding:8px 16px;font-size:13px;cursor:poi
 .drops{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .drops .mat{background:var(--bg)}
 .expOnly{border:1px dashed var(--sky);border-radius:6px}
+.mat.done{background:#eef2ef;color:#9aa8a0;text-decoration:line-through}
+.invRow{display:flex;gap:8px;flex-wrap:wrap}
+.invRow input{border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;background:#fbfdfc}
+#invName{flex:1;min-width:120px}
+#invQty{width:70px}
+.invChip{background:var(--accent-soft);color:#22654a;border-radius:8px;padding:3px 8px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+.invChip b{cursor:pointer;font-weight:700;padding:0 2px;user-select:none}
+.invChip .del{cursor:pointer;color:#c0655f;font-weight:700;padding:0 2px}
+.invHint{font-size:12px;color:var(--sub);margin-top:8px}
+.rem{color:var(--sub);font-size:11.5px}
 .notes{font-size:12px;color:var(--sub);margin-top:6px}
 .section-note{font-size:12px;color:var(--sub);margin:6px 0 10px}
 .craftTree{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:12.5px;color:var(--sub)}
@@ -67,17 +77,35 @@ footer{text-align:center;font-size:11px;color:var(--sub);margin-top:24px}
   </div>
 </div>
 
+<h2>② 已拥有素材 <span class="tag" id="invCount">0 项</span></h2>
+<div class="card">
+  <div class="invRow">
+    <input id="invName" list="matNames" placeholder="输入素材名称">
+    <datalist id="matNames"></datalist>
+    <input id="invQty" type="number" min="1" value="1">
+    <button class="plain" onclick="addInv()">＋录入</button>
+  </div>
+  <div class="matList" id="invList" style="margin-top:10px"></div>
+  <div class="btnRow">
+    <button class="plain" onclick="exportInv()">⬇ 导出记录</button>
+    <button class="plain" onclick="document.getElementById('invFile').click()">⬆ 导入记录</button>
+    <button class="plain" onclick="clearInv()">🗑 清空</button>
+    <input type="file" id="invFile" accept=".json" style="display:none" onchange="importInv(this)">
+  </div>
+  <div class="invHint">数据仅保存在本机浏览器缓存(localStorage)中,不影响页面本身;素材名后的 −/＋ 可调整数量,✕ 删除。推荐副本时将自动扣除已有数量。</div>
+</div>
+
 <div id="result">
-  <h2>② 需要的素材</h2>
+  <h2>③ 需要的素材 <span class="tag">已扣除已有</span></h2>
   <div class="card"><div class="matList" id="matList"></div>
     <div class="craftTree" id="craftTree"></div>
   </div>
 
-  <h2>③ 推荐刷取副本 <span class="tag">按覆盖素材数排序</span></h2>
+  <h2>④ 推荐刷取副本 <span class="tag">按覆盖素材数排序</span></h2>
   <div class="section-note">优先推荐可同时刷到多种需求素材的副本;「远征专属」标记表示该副本产出的素材只能通过委托探索获得,建议优先收取。</div>
   <div id="dungeonList"></div>
 
-  <h2>④ 时产建筑(优先度最低)</h2>
+  <h2>⑤ 时产建筑(优先度最低)</h2>
   <div class="section-note">以下为按时间产出素材、有等级要求的建筑,不算可刷副本,仅列出可产出的需求素材供参考。</div>
   <div id="buildingList"></div>
 </div>
@@ -122,6 +150,56 @@ function isCraftOnly(m){ // 只能靠天地熔炉合成获得
   return src.every(s=>BUILDINGS.includes(s)) && (DATA.sources[m]||[]).includes(FORGE);
 }
 
+// ---------- 已拥有素材(本地缓存) ----------
+const INV_KEY='ylqt_inventory';
+let INV={};
+try{INV=JSON.parse(localStorage.getItem(INV_KEY)||'{}')}catch(e){INV={}}
+const ALLMATS=Object.keys(DATA.sources).sort();
+const dl=document.getElementById('matNames');
+ALLMATS.forEach(m=>{const o=document.createElement('option');o.value=m;dl.appendChild(o)});
+function saveInv(){localStorage.setItem(INV_KEY,JSON.stringify(INV));renderInv();}
+function renderInv(){
+  const box=document.getElementById('invList'); box.innerHTML='';
+  const keys=Object.keys(INV).sort();
+  document.getElementById('invCount').textContent=keys.length+' 项';
+  keys.forEach(m=>{
+    const s=document.createElement('span'); s.className='invChip';
+    s.innerHTML=`${m} <b title="减少" onclick="adjInv('${m}',-1)">−</b>×${INV[m]}<b title="增加" onclick="adjInv('${m}',1)">＋</b><span class="del" title="删除" onclick="delInv('${m}')">✕</span>`;
+    box.appendChild(s);
+  });
+  if(!keys.length) box.innerHTML='<span class="rem">尚未录入任何素材</span>';
+}
+function addInv(){
+  const name=document.getElementById('invName').value.trim();
+  const qty=parseInt(document.getElementById('invQty').value)||1;
+  if(!name){alert('请输入素材名称');return;}
+  if(!ALLMATS.includes(name)&&!confirm(`「${name}」不在素材表来源中,仍要录入吗?`))return;
+  INV[name]=(INV[name]||0)+qty; saveInv();
+  document.getElementById('invName').value=''; document.getElementById('invQty').value=1;
+}
+function adjInv(m,d){INV[m]=(INV[m]||0)+d; if(INV[m]<=0)delete INV[m]; saveInv();}
+function delInv(m){delete INV[m]; saveInv();}
+function clearInv(){if(confirm('确定清空所有已拥有素材记录?')){INV={};saveInv();}}
+function exportInv(){
+  const blob=new Blob([JSON.stringify(INV,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='妖恋奇谭-已有素材记录.json';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function importInv(input){
+  const f=input.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{
+    const d=JSON.parse(r.result);
+    if(typeof d!=='object'||Array.isArray(d))throw 0;
+    Object.entries(d).forEach(([k,v])=>{const q=parseInt(v);if(q>0)INV[k]=q;});
+    saveInv(); alert('导入成功,共 '+Object.keys(d).length+' 项');
+  }catch(e){alert('文件格式不正确,请选择由本页导出的 JSON 文件')}};
+  r.readAsText(f,'utf-8'); input.value='';
+}
+renderInv();
+
 // ---------- 计算 ----------
 function calc(){
   if(!selected.size){alert('请先勾选至少一个角色');return;}
@@ -145,12 +223,15 @@ function calc(){
   Object.keys({...need}).forEach(m=>{
     if(need[m]&&isCraftOnly(m)){ const q=need[m].qty; delete need[m]; expand(m,q); }
   });
-  // 3. 展示素材清单
+  // 3. 展示素材清单(扣除已有)
+  const remain={}; // m -> 还需数量
+  Object.keys(need).forEach(m=>{remain[m]=Math.max(0,need[m].qty-(INV[m]||0))});
   const ml=document.getElementById('matList'); ml.innerHTML='';
   Object.entries(need).sort((a,b)=>b[1].qty-a[1].qty).forEach(([m,v])=>{
     const s=document.createElement('span');
-    s.className='mat'+(v.craft?' craft':'');
-    s.textContent=`${m} ×${v.qty}`;
+    const ok=remain[m]===0;
+    s.className='mat'+(v.craft?' craft':'')+(ok?' done':'');
+    s.textContent=ok?`${m} ×${v.qty} ✓已够`:`${m} 还需${remain[m]} / ${v.qty}`;
     ml.appendChild(s);
   });
   const ct=document.getElementById('craftTree');
@@ -158,8 +239,8 @@ function calc(){
     ? '<b>⚙ 合成展开:</b><br>'+craftLines.map(l=>`${l.m} ×${l.qty} ← ${l.ings.map(i=>i[0]+'×'+i[1]).join(' + ')}`).join('<br>')
     : '本套素材无需合成即可直接获取。';
 
-  // 4. 副本统计
-  const needMats=Object.keys(need);
+  // 4. 副本统计(仅统计仍缺少的素材)
+  const needMats=Object.keys(need).filter(m=>remain[m]>0);
   const expOnlyMats=new Set(needMats.filter(m=>{
     const f=farmableSources(m); return f.length>0 && f.every(s=>s.startsWith('委托探索'));
   }));
@@ -181,21 +262,21 @@ function calc(){
   const dl=document.getElementById('dungeonList'); dl.innerHTML='';
   ranked.forEach((d,i)=>{
     const el=document.createElement('div'); el.className='dungeon';
-    const matsHtml=d.mats.map(m=>`<span class="mat${expOnlyMats.has(m)?' expOnly':''}" title="${expOnlyMats.has(m)?'仅委托探索产出':''}">${m}${expOnlyMats.has(m)?' 🚩':''}</span>`).join('');
+    const matsHtml=d.mats.map(m=>`<span class="mat${expOnlyMats.has(m)?' expOnly':''}" title="${expOnlyMats.has(m)?'仅委托探索产出':''}">${m} 还需${remain[m]}${expOnlyMats.has(m)?' 🚩':''}</span>`).join('');
     el.innerHTML=`<div class="head"><span class="rank">${i+1}</span><span class="dname">${d.name}</span>
       ${d.hasExp?'<span class="badge exp">含远征专属素材</span>':''}
-      <span class="score">覆盖 ${d.n} 种需求素材</span></div>
+      <span class="score">覆盖 ${d.n} 种待刷素材</span></div>
       <div class="drops">${matsHtml}</div>`;
     dl.appendChild(el);
   });
-  if(!ranked.length) dl.innerHTML='<div class="empty">没有可直接刷取的副本</div>';
+  if(!ranked.length) dl.innerHTML='<div class="empty">没有需要刷取的副本 — 所有素材已由已有库存满足 🎉</div>';
 
   // 5. 建筑区
   const bl=document.getElementById('buildingList'); bl.innerHTML='';
   Object.entries(buildings).forEach(([name,mats])=>{
     const el=document.createElement('div'); el.className='dungeon'; el.style.opacity=.8;
     el.innerHTML=`<div class="head"><span class="dname">🏠 ${name}</span></div>
-      <div class="drops">${mats.map(m=>`<span class="mat">${m}</span>`).join('')}</div>`;
+      <div class="drops">${mats.map(m=>`<span class="mat">${m} 还需${remain[m]}</span>`).join('')}</div>`;
     bl.appendChild(el);
   });
   if(!Object.keys(buildings).length) bl.innerHTML='<div class="empty">无</div>';
